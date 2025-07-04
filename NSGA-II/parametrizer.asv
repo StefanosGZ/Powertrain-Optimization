@@ -1,0 +1,238 @@
+function [layout_model, params] = parametrizer(layout_model, parameters, layout)
+%% This function assigns parameters to the blocks in the Simulink model from provided sets.
+% Arguments: 
+%   - layout_model: Simulink model containing the desired layout
+%   - Parameters: Multiple sets of parameters for each component block.
+% Returns
+%   - layout_model: Simulink model containing the desired layout and the
+%                   assigned parameters
+
+%Get all the blocks
+blocks = find_system(layout_model, 'Type', 'Block');
+% Sort them model from left to right (otherwise it will retrieve everythin alpahabetical order
+positions = cellfun(@(b) get_param(b, 'Position'), blocks, 'UniformOutput', false);
+xCoords = cellfun(@(pos) pos(1), positions);
+[~, sortIdx] = sort(xCoords);
+blocks = blocks(sortIdx);
+if nargin == 2
+    if all(structfun(@(x) size(x,1)==1, parameters))
+        parameters = randomize_parameters(parameters);
+    end
+    params = parametrize_random(parameters, blocks);
+else
+    if length(blocks) ~= length(layout.params)+1
+        cut_point = length(layout.layout) - length(layout.params);
+        blocks_left = blocks(1:cut_point);
+        blocks_right = blocks(cut_point + 1:end - 1);
+        layout.layout = layout.layout(cut_point + 1:end);
+        if all(structfun(@(x) size(x,1)==1, parameters))
+            parameters = randomize_parameters(parameters);
+        end
+        params_left = parametrize_random(parameters, blocks_left);
+        params_right = parametrize_crossover(layout, blocks_right);
+
+        params = [params_left, params_right];
+    else
+        params = parametrize_crossover(layout, blocks);
+    end
+
+end
+end
+
+function params = parametrize_random(parameters, blocks)    
+% Array to save the parameters
+params = cell(1, length(blocks) - 1);
+k = 1;
+% Loop through each block and assign random parameters from provided values
+for i = 1:length(blocks)
+    elementType = get_param(blocks{i}, 'ReferenceBlock');
+    
+    if strcmp(elementType, 'Powertrain_Library_GenAI/Battery')
+        BAT_par_sim = parameters.BAT_par(randi(size(parameters.BAT_par, 1)), :);
+        BAT_par_sim = arrayfun(@num2str, BAT_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'V_bat_nom', BAT_par_sim{1}, 'mAh_bat_rated', BAT_par_sim{2}, 'cost', BAT_par_sim{3}, 'base_emissions', BAT_par_sim{4});
+        params{k} = {'BAT',BAT_par_sim};
+        k = k + 1;
+
+    
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Generator-Battery')
+        GEN_par_sim = parameters.GEN_par(randi(size(parameters.GEN_par, 1)), :);
+        GEN_par_sim = arrayfun(@num2str, GEN_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'V_bat_nom', GEN_par_sim{1}, 'mAh_bat_rated', GEN_par_sim{2}, 'cost', GEN_par_sim{3}, 'base_emissions', GEN_par_sim{4});  
+        params{k} = {'GEN', GEN_par_sim};
+        k = k + 1;
+
+
+    
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Gearbox')
+        GB_par_sim = parameters.GB_par(randi(size(parameters.GB_par, 1)), :);
+        GB_par_sim = arrayfun(@num2str, GB_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'G', GB_par_sim{1}, 'cost', GB_par_sim{2}, 'base_emissions', GB_par_sim{3});
+        params{k} = {'GB', GB_par_sim};
+        k = k + 1;
+
+
+    % elseif strcmp(elementType, 'Powertrain_Library_GenAI/Transmission')
+    %     TR_par_sim = parameters.TR_par(randi(size(parameters.TR_par, 1)), :);
+    %     Shift_par_sim = parameters.Shift_par(randi(size(parameters.Shift_par, 1)), :);
+    %     TR_par_sim = arrayfun(@num2str, TR_par_sim, 'UniformOutput', false);
+    %     Shift_par_sim = arrayfun(@num2str, Shift_par_sim, 'UniformOutput', false);
+    %     set_param(blocks{i}, 'Gs', TR_par_sim{1}, 'shift_thresholds', Shift_par_sim);
+    %     params{end+1} = {'TR', TR_par_sim};
+
+    
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/IC Engine')
+        ICE_par_sim = parameters.ICE_par(randi(size(parameters.ICE_par, 1)), :);
+        ICE_par_sim = arrayfun(@num2str, ICE_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'T_p', ICE_par_sim{1}, 'P_p', ICE_par_sim{2}, 'w_T', ICE_par_sim{3}, 'w_P', ICE_par_sim{4}, ...
+            'w_ice_max', ICE_par_sim{5}, 'cost', ICE_par_sim{6}, 'base_emissions', ICE_par_sim{7});
+        params{k} = {'ICE', ICE_par_sim};
+        k = k + 1;
+
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Motor')
+        MOT_par_sim = parameters.MOT_par(randi(size(parameters.MOT_par, 1)), :);
+        MOT_par_sim = arrayfun(@num2str, MOT_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'T_mot_max', MOT_par_sim{1}, 'P_mot_max', MOT_par_sim{2}, 'cost', MOT_par_sim{3}, 'base_emissions', MOT_par_sim{4});
+        params{k} = {'MOT', MOT_par_sim};
+        k = k + 1;
+
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Vehicle')
+        Env_par_sim = parameters.Env_par(randi(size(parameters.Env_par, 1)), :);
+        VEH_par_sim = parameters.VEH_par(randi(size(parameters.VEH_par, 1)), :);
+        Env_par_sim = arrayfun(@num2str, Env_par_sim, 'UniformOutput', false);
+        VEH_par_sim = arrayfun(@num2str, VEH_par_sim, 'UniformOutput', false);
+        set_param(blocks{i}, 'm', VEH_par_sim{1}, 'r', VEH_par_sim{2}, 'A', VEH_par_sim{3}, 'C_D', VEH_par_sim{4}, ...
+            'cost', VEH_par_sim{5}, 'base_emissions', VEH_par_sim{6}, ...
+            'mu_rr', Env_par_sim{1}, 'rho', Env_par_sim{2}, 'g', Env_par_sim{3});
+        params{k} = {'VEH', Env_par_sim,VEH_par_sim};
+        k = k + 1;
+    
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Fuel Tank')
+        params{k} = {'FT',""};
+        k = k + 1;
+
+    elseif strcmp(elementType, 'Powertrain_Library_GenAI/Transmission')
+        params{k} = {'TR',""};
+        k = k + 1;
+       
+    end
+    
+end
+end
+
+function params = parametrize_crossover(offspring, blocks)
+params = offspring.params;
+
+% Loop through each component in the offspring layout and assign its parameters
+for i = 1:length(offspring.layout)
+    compType = offspring.layout{i};
+    paramSet = offspring.params{i}{2};
+    currentBlock = blocks{i};
+    
+    switch compType
+        case 'BAT'
+            % Battery block: expected paramSet = {V_bat_nom, mAh_bat_rated, cost, base_emissions}
+            set_param(currentBlock, 'V_bat_nom', (paramSet{1}), ...
+                'mAh_bat_rated', (paramSet{2}), ...
+                'cost', (paramSet{3}), ...
+                'base_emissions', (paramSet{4}));
+            
+        case 'GEN'
+            % Generator block: expected paramSet = {V_bat_nom, mAh_bat_rated, cost, base_emissions}
+            set_param(currentBlock, 'V_bat_nom', (paramSet{1}), ...
+                'mAh_bat_rated', (paramSet{2}), ...
+                'cost', (paramSet{3}), ...
+                'base_emissions', (paramSet{4}));
+            
+        case 'GB'
+            % Gearbox block: expected paramSet = {G, cost, base_emissions}
+            set_param(currentBlock, 'G', (paramSet{1}), ...
+                'cost', (paramSet{2}), ...
+                'base_emissions', (paramSet{3}));
+            
+        case 'ICE'
+            % IC Engine block: expected paramSet = {T_p, P_p, w_T, w_P, w_ice_max, cost, base_emissions}
+            set_param(currentBlock, 'T_p', (paramSet{1}), ...
+                'P_p', (paramSet{2}), ...
+                'w_T', (paramSet{3}), ...
+                'w_P', (paramSet{4}), ...
+                'w_ice_max', (paramSet{5}), ...
+                'cost', (paramSet{6}), ...
+                'base_emissions', (paramSet{7}));
+            
+        case 'MOT'
+            % Motor block: expected paramSet = {T_mot_max, P_mot_max, cost, base_emissions}
+            set_param(currentBlock, 'T_mot_max', (paramSet{1}), ...
+                'P_mot_max', (paramSet{2}), ...
+                'cost', (paramSet{3}), ...
+                'base_emissions', (paramSet{4}));
+            
+        case 'VEH'
+            % Vehicle block: expected paramSet is a cell array with two sets:
+            %   {Env_params, VEH_params}
+            % Env_params: {mu_rr, rho, g}
+            % VEH_params: {m, r, A, C_D, cost, base_emissions}
+            env_par = paramSet;
+            veh_par = offspring.params{i}{3};
+            set_param(currentBlock, 'm', (veh_par{1}), ...
+                'r', (veh_par{2}), ...
+                'A', (veh_par{3}), ...
+                'C_D', (veh_par{4}), ...
+                'cost', (veh_par{5}), ...
+                'base_emissions', (veh_par{6}), ...
+                'mu_rr', (env_par{1}), ...
+                'rho', (env_par{2}), ...
+                'g', (env_par{3}));
+            
+        case 'FT'
+            % Fuel Tank block: No parameter assignment defined.
+            % (Add set_param calls here if needed.)
+
+        case 'TR'
+            % Transmission block: No parameter assignment defined.
+            % (Add set_param calls here if needed.)
+            
+    end
+end
+
+end
+
+function rand_parameters = randomize_parameters(original_parameters)
+    % Set the variation percentage (assumed to be defined globally)
+    global variation
+    % Define the fields that should NOT be randomized.
+    skipFields = {'Env_par', 'VEH_par'};
+    % Get the list of all parameter field names.
+    paramFields = fieldnames(original_parameters);
+    
+    % Loop over each field in the structure.
+    for i = 1:length(paramFields)
+        fieldName = paramFields{i};
+        
+        % Check if this field is in the skip list.
+        if ismember(fieldName, skipFields)
+            if strcmp(fieldName, 'VEH_par')
+                scalingFactor = 1 + rand * variation;
+                rand_parameters.(fieldName) = original_parameters.(fieldName) * scalingFactor;
+            else
+            % Copy the field unchanged.
+                rand_parameters.(fieldName) = original_parameters.(fieldName);
+            end
+            % Optionally, you can display a message:
+            % fprintf('Skipping randomization for %s.\n', fieldName);
+            continue;  % Skip randomization for this field
+        end
+        
+        % Generate a random variation in the range [-variation, variation].
+        % Use this if you want +/- variation
+        % randomVariation = rand * (2 * variation) - variation;
+        % scalingFactor = 1 + randomVariation;
+        scalingFactor = 1 - rand * variation;
+        
+        % Optionally, display the scaling information for verification.
+        % fprintf('Scaling %s by %.2f%% (scaling factor = %.4f)\n', fieldName, randomVariation*100, scalingFactor);
+        
+        % Scale the entire configuration for the current parameter.
+        rand_parameters.(fieldName) = original_parameters.(fieldName) * scalingFactor;
+    end
+end

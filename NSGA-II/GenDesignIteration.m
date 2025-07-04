@@ -1,0 +1,48 @@
+function [results, layout] = GenDesignIteration(library, DriveCycle, parameters, layout, offspring)
+% if 3 variables (Library, Drivecycle, parameters) are given, a random layout will be created from start
+% if 4 variables (Library, Drivecycle, parameters, layout) are given, a mutated layout (cutoff) will be created
+% if 5 variables (Library, Drivecycle, parameters, layout, offspring) are given, an offspring will be simulated (Nothing created)
+method = 'None';
+if nargin == 3
+    % Generating layout in the form of a sequence (From start) 
+    layout = modified_layout_gen_veh(library);
+    method = 'random';
+elseif nargin == 4
+    % Generating layout in the form of a sequence (Mutation)
+    layout = modified_layout_gen_veh(library, layout);
+end
+
+% Generating layout model in Simulink, with blocks and connections
+layout_model = model_gen(layout.layout, layout.layout_conn_type);
+%open_system(layout_model)
+if strcmp(method, 'random')
+    [layout_model, params] = parametrizer(layout_model, parameters);
+else
+    [layout_model, params] = parametrizer(layout_model, parameters, layout);
+end
+
+% Make simulated_powertrains a persistent variable
+persistent simulated_powertrains; 
+% Initialize simulated_powertrains array if it has not been initialized
+if isempty(simulated_powertrains)
+    simulated_powertrains = {};
+end
+
+% Check if powertrain has been simulated before to save computing power
+[is_unique, simulated_powertrains] = is_unique_check(simulated_powertrains, params);
+if is_unique
+    % PID Controller tuning
+    no_var = 1;
+    lb = 0;
+    ub = 500;
+    [k, best, tuning_time] = GeneticAlgorithmPIDTuner(layout_model, lb, ub, no_var, DriveCycle);
+    
+    % Running simulation on whole drivecycle - N/A, Wh, Wh/km, Euros, tons of CO2
+    [results.MAE, results.E_total, results.E_specific, results.cost, results.emissions, results.fig] = Powertrain_tester(layout_model, DriveCycle);
+    results.layout = layout.layout;
+    results.layout_model = layout_model;
+    layout.layout_fitness = [results.MAE, results.E_specific, results.cost, results.emissions];
+    layout.params = params;
+else
+    results.MAE = inf;
+end 
